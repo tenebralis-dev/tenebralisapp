@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 
-import '../data/models/world_model.dart';
+import '../../../core/ui/async_value_widget.dart';
+import '../application/worlds_providers.dart';
+import '../data/models/world.dart';
 
 /// Worlds Page - List and explore available worlds
 class WorldsPage extends ConsumerStatefulWidget {
@@ -15,42 +17,18 @@ class WorldsPage extends ConsumerStatefulWidget {
   ConsumerState<WorldsPage> createState() => _WorldsPageState();
 }
 
-class _WorldsPageState extends ConsumerState<WorldsPage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  String _selectedGenre = 'all';
-
-  final List<String> _genres = ['all', 'fantasy', 'sci-fi', 'modern', 'horror'];
-  final Map<String, String> _genreLabels = {
-    'all': '全部',
-    'fantasy': '奇幻',
-    'sci-fi': '科幻',
-    'modern': '现代',
-    'horror': '恐怖',
-  };
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
+class _WorldsPageState extends ConsumerState<WorldsPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
+    final asyncWorlds = ref.watch(myWorldsProvider);
 
     return Scaffold(
       backgroundColor: scheme.background,
       body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) {
           return [
-            // App Bar
             SliverAppBar(
               expandedHeight: 120,
               floating: true,
@@ -62,17 +40,8 @@ class _WorldsPageState extends ConsumerState<WorldsPage>
               ),
               actions: [
                 IconButton(
-                  icon: const Icon(Icons.search),
-                  onPressed: () {
-                    // TODO: Implement search
-                  },
-                ),
-                IconButton(
                   icon: const Icon(Icons.add),
-                  onPressed: () {
-                    // TODO: Create new world
-                    _showCreateWorldDialog();
-                  },
+                  onPressed: () => _showCreateWorldDialog(context),
                 ),
               ],
               flexibleSpace: FlexibleSpaceBar(
@@ -90,215 +59,146 @@ class _WorldsPageState extends ConsumerState<WorldsPage>
                   ),
                 ),
               ),
-              bottom: TabBar(
-                controller: _tabController,
-                indicatorColor: const Color(0xFF6C63FF),
-                tabs: const [
-                  Tab(text: '探索'),
-                  Tab(text: '我的'),
-                ],
-              ),
             ),
           ];
         },
-        body: Column(
-          children: [
-            // Genre Filter
-            _buildGenreFilter()
-                .animate()
-                .fadeIn(delay: 100.ms),
-
-            // Content
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  // Explore Tab
-                  _buildWorldsList(isPublic: true),
-                  // My Worlds Tab
-                  _buildWorldsList(isPublic: false),
-                ],
-              ),
-            ),
-          ],
+        body: AsyncValueWidget<List<World>>(
+          value: asyncWorlds,
+          empty: (items) => items.isEmpty,
+          emptyTitle: '你还没有创建世界',
+          emptyPrimaryAction: TextButton.icon(
+            onPressed: () => _showCreateWorldDialog(context),
+            icon: const Icon(Icons.add),
+            label: const Text('创建第一个世界'),
+          ),
+          data: (worlds) {
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: worlds.length,
+              itemBuilder: (context, index) {
+                final world = worlds[index];
+                return _WorldCard(
+                  world: world,
+                  onTap: () => _onWorldTap(world),
+                )
+                    .animate(delay: Duration(milliseconds: 50 * index))
+                    .fadeIn()
+                    .slideX(begin: 0.1);
+              },
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildGenreFilter() {
-    return Container(
-      height: 50,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _genres.length,
-        itemBuilder: (context, index) {
-          final genre = _genres[index];
-          final isSelected = genre == _selectedGenre;
-
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedGenre = genre;
-              });
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? const Color(0xFF6C63FF)
-                    : Colors.white.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isSelected
-                      ? const Color(0xFF6C63FF)
-                      : Colors.white.withValues(alpha: 0.2),
-                ),
-              ),
-              child: Text(
-                _genreLabels[genre] ?? genre,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.white70,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildWorldsList({required bool isPublic}) {
-    // For now, show mock data
-    // In production, this would use ref.watch(publicWorldsProvider) or similar
-    final mockWorlds = _getMockWorlds();
-
-    if (mockWorlds.isEmpty) {
-      return _buildEmptyState(isPublic);
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: mockWorlds.length,
-      itemBuilder: (context, index) {
-        final world = mockWorlds[index];
-        return WorldCard(
-          world: world,
-          onTap: () => _onWorldTap(world),
-        )
-            .animate(delay: Duration(milliseconds: 50 * index))
-            .fadeIn()
-            .slideX(begin: 0.1);
-      },
-    );
-  }
-
-  Widget _buildEmptyState(bool isPublic) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            isPublic ? Icons.public_off : Icons.folder_open,
-            size: 64,
-            color: Colors.white30,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            isPublic ? '暂无公开世界' : '你还没有创建世界',
-            style: const TextStyle(color: Colors.white54, fontSize: 16),
-          ),
-          const SizedBox(height: 8),
-          if (!isPublic)
-            TextButton.icon(
-              onPressed: _showCreateWorldDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('创建第一个世界'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  void _onWorldTap(WorldModel world) {
-    // TODO: Navigate to world detail or enter world
+  void _onWorldTap(World world) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => WorldDetailSheet(world: world),
+      builder: (context) => _WorldDetailSheet(world: world),
     );
   }
 
-  void _showCreateWorldDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('创建世界功能即将推出'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
+  Future<void> _showCreateWorldDialog(BuildContext context) async {
+    final repo = ref.read(worldsRepositoryProvider);
 
-  List<WorldModel> _getMockWorlds() {
-    return [
-      WorldModel(
-        id: '1',
-        name: '星际迷途',
-        genre: 'sci-fi',
-        description: '在遥远的未来，人类已经殖民了银河系。你是一名星际探险家...',
-        settings: const WorldSettings(
-          systemPrompt: 'You are a sci-fi world narrator...',
-        ),
-      ),
-      WorldModel(
-        id: '2',
-        name: '魔法学院',
-        genre: 'fantasy',
-        description: '欢迎来到艾德拉魔法学院，这里是培养年轻法师的圣地...',
-        settings: const WorldSettings(
-          systemPrompt: 'You are a fantasy world narrator...',
-        ),
-      ),
-      WorldModel(
-        id: '3',
-        name: '都市传说',
-        genre: 'modern',
-        description: '繁华都市的背后，隐藏着不为人知的秘密...',
-        settings: const WorldSettings(
-          systemPrompt: 'You are a modern world narrator...',
-        ),
-      ),
-      WorldModel(
-        id: '4',
-        name: '暗夜庄园',
-        genre: 'horror',
-        description: '古老的庄园在夜色中显得格外诡异，据说这里曾发生过...',
-        settings: const WorldSettings(
-          systemPrompt: 'You are a horror world narrator...',
-        ),
-      ),
-    ];
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+
+    try {
+      final created = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('创建世界'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: '名称',
+                  ),
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: '简介（可选）',
+                  ),
+                  minLines: 1,
+                  maxLines: 3,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('创建'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (created != true) return;
+
+      final name = nameController.text.trim();
+      final description = descriptionController.text.trim();
+
+      if (name.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('名称不能为空')),
+          );
+        }
+        return;
+      }
+
+      await repo.createWorld(
+        name: name,
+        description: description.isEmpty ? null : description,
+      );
+
+      ref.invalidate(myWorldsProvider);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('创建成功')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('创建失败：$e')),
+        );
+      }
+    } finally {
+      nameController.dispose();
+      descriptionController.dispose();
+    }
   }
 }
 
 /// World Card Widget
-class WorldCard extends StatelessWidget {
-  const WorldCard({
-    super.key,
+class _WorldCard extends StatelessWidget {
+  const _WorldCard({
     required this.world,
     required this.onTap,
   });
 
-  final WorldModel world;
+  final World world;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final genreColor = _getGenreColor(world.genre);
+    final genreColor = _getGenreColor();
 
     return GestureDetector(
       onTap: onTap,
@@ -340,7 +240,7 @@ class WorldCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
-                          _getGenreIcon(world.genre),
+                          _getGenreIcon(),
                           color: genreColor,
                           size: 24,
                         ),
@@ -371,7 +271,7 @@ class WorldCard extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                _getGenreLabel(world.genre),
+                                _getGenreLabel(),
                                 style: TextStyle(
                                   color: genreColor,
                                   fontSize: 10,
@@ -406,13 +306,15 @@ class WorldCard extends StatelessWidget {
                   Row(
                     children: [
                       _StatChip(
-                        icon: Icons.people_outline,
-                        label: '${world.settings?.npcs.length ?? 0} NPC',
+                        icon: Icons.person_outline,
+                        label: world.slug ?? '未设置 slug',
                       ),
                       const SizedBox(width: 12),
                       _StatChip(
-                        icon: Icons.flag_outlined,
-                        label: '${world.settings?.quests.length ?? 0} 任务',
+                        icon: Icons.update,
+                        label: world.updatedAt == null
+                            ? '未同步'
+                            : '已同步',
                       ),
                     ],
                   ),
@@ -425,50 +327,11 @@ class WorldCard extends StatelessWidget {
     );
   }
 
-  Color _getGenreColor(String genre) {
-    switch (genre) {
-      case 'fantasy':
-        return const Color(0xFF9C27B0);
-      case 'sci-fi':
-        return const Color(0xFF00BCD4);
-      case 'modern':
-        return const Color(0xFF4CAF50);
-      case 'horror':
-        return const Color(0xFFE91E63);
-      default:
-        return const Color(0xFF6C63FF);
-    }
-  }
+  Color _getGenreColor() => const Color(0xFF6C63FF);
 
-  IconData _getGenreIcon(String genre) {
-    switch (genre) {
-      case 'fantasy':
-        return Icons.auto_fix_high;
-      case 'sci-fi':
-        return Icons.rocket_launch;
-      case 'modern':
-        return Icons.location_city;
-      case 'horror':
-        return Icons.nightlight;
-      default:
-        return Icons.public;
-    }
-  }
+  IconData _getGenreIcon() => Icons.public;
 
-  String _getGenreLabel(String genre) {
-    switch (genre) {
-      case 'fantasy':
-        return '奇幻';
-      case 'sci-fi':
-        return '科幻';
-      case 'modern':
-        return '现代';
-      case 'horror':
-        return '恐怖';
-      default:
-        return genre;
-    }
-  }
+  String _getGenreLabel() => '世界';
 }
 
 class _StatChip extends StatelessWidget {
@@ -497,10 +360,10 @@ class _StatChip extends StatelessWidget {
 }
 
 /// World Detail Bottom Sheet
-class WorldDetailSheet extends StatelessWidget {
-  const WorldDetailSheet({super.key, required this.world});
+class _WorldDetailSheet extends StatelessWidget {
+  const _WorldDetailSheet({required this.world});
 
-  final WorldModel world;
+  final World world;
 
   @override
   Widget build(BuildContext context) {

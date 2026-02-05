@@ -143,6 +143,22 @@ create trigger on_auth_user_created
 -- 0) Extension (already in Part1, safe to keep)
 create extension if not exists moddatetime schema extensions;
 
+-- 0.1) updated_at helper (Security Advisor-friendly)
+-- Notes:
+-- - SECURITY DEFINER is fine here, but we must lock down search_path.
+-- - If you prefer, you can drop moddatetime usage later and switch triggers to call this.
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
 -- 1) Worlds
 create table if not exists public.worlds (
   id uuid primary key default gen_random_uuid(),

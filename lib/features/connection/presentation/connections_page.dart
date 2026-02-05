@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/navigation/nav_utils.dart';
+import '../../../core/ui/app_empty_view.dart';
+import '../../../core/ui/app_error_view.dart';
+import '../../../core/ui/app_loading_view.dart';
 import '../domain/api_connection.dart';
 import 'controllers/connections_list_controller.dart';
 import 'connection_editor_page.dart';
@@ -50,8 +54,14 @@ class ConnectionsPage extends ConsumerWidget {
           ),
           Expanded(
             child: asyncState.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => _ErrorView(message: e.toString()),
+              loading: () => const AppLoadingView(message: '正在加载连接...'),
+              error: (e, _) => AppErrorView(
+                title: '加载失败',
+                message: '无法加载连接列表，请稍后重试。',
+                debugDetails: e.toString(),
+                onRetry: () => ref.read(connectionsListControllerProvider.notifier).refreshAll(),
+                onBack: () => context.popOrGoHome(),
+              ),
               data: (state) {
                 final showCloud =
                     filter == ConnectionListFilter.all ||
@@ -70,7 +80,11 @@ class ConnectionsPage extends ConsumerWidget {
                     .toList();
 
                 if (!showCloud && !showLocal) {
-                  return const Center(child: Text('无可用筛选结果'));
+                  return const AppEmptyView(
+                    title: '无可用筛选结果',
+                    subtitle: '请调整上方筛选条件。',
+                    icon: Icons.filter_alt_off,
+                  );
                 }
 
                 return ListView(
@@ -219,49 +233,6 @@ class _EmptyHint extends StatelessWidget {
             .textTheme
             .bodyMedium
             ?.copyWith(color: scheme.onSurfaceVariant),
-      ),
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error, size: 40),
-            const SizedBox(height: 12),
-            Text(
-              '加载失败',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => context.pop(),
-              icon: const Icon(Icons.arrow_back),
-              label: const Text('返回'),
-            ),
-          ],
-        ),
       ),
     );
   }

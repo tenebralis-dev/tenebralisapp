@@ -12,6 +12,7 @@ import '../features/home/presentation/home_hud_page.dart';
 import '../features/desktop/icon_customization/presentation/icon_customize_page.dart';
 import '../features/theme/presentation/theme_customization_page.dart';
 import '../features/customize/presentation/customize_hub_page.dart';
+import '../features/worlds/presentation/worlds_page.dart';
 
 /// Centralized route path constants.
 ///
@@ -19,13 +20,28 @@ import '../features/customize/presentation/customize_hub_page.dart';
 abstract class AppRoutes {
   static const boot = '/';
   static const auth = '/auth';
-  static const osHome = '/os/home';
-  static const os = osHome; // Backwards-compat for existing calls.
 
+  /// Dream OS home (desktop).
+  static const osHome = '/os/home';
+
+  /// Backwards-compat for existing calls.
+  static const os = osHome;
+
+  /// Non-app routes
   static const osConnection = '/os/connection';
+
+  /// OS app base prefix.
+  static const osAppsPrefix = '/os/apps';
+
+  /// Build an app route under `/os/apps/<appId>`.
+  static String osApp(String appId) => '$osAppsPrefix/$appId';
+
+  /// Known app routes
   static const osSettings = '/os/apps/settings';
   static const osCustomize = '/os/apps/customize';
   static const osThemeCustomize = '/os/apps/theme_custom';
+  static const osProfile = '/os/apps/profile';
+  static const osIdentity = '/os/apps/identity';
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -62,16 +78,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       // App routes
       GoRoute(
-        path: '/os/apps/profile',
+        path: AppRoutes.osProfile,
         builder: (context, state) => const ProfilePage(),
       ),
       GoRoute(
-        path: '/os/apps/identity',
+        path: AppRoutes.osIdentity,
         builder: (context, state) => const HomeHudPage(),
+      ),
+      GoRoute(
+        path: '/os/apps/worlds',
+        builder: (context, state) => const WorldsPage(),
       ),
       // Minimal app routes (placeholder pages) so tapping icons works.
       GoRoute(
-        path: '/os/apps/:appId',
+        path: '${AppRoutes.osAppsPrefix}/:appId',
         builder: (context, state) {
           final appId = state.pathParameters['appId'] ?? 'app';
           return _AppPlaceholderPage(appId: appId);
