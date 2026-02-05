@@ -30,7 +30,7 @@ class ThemeCustomizationPage extends ConsumerWidget {
               ButtonSegment(value: AppThemeOption.defaultLight, label: Text('浅色')),
               ButtonSegment(value: AppThemeOption.defaultDark, label: Text('深色')),
             ],
-            selected: {themeOption == AppThemeOption.system ? AppThemeOption.defaultDark : themeOption},
+            selected: {themeOption == AppThemeOption.system ? AppThemeOption.defaultLight : themeOption},
             onSelectionChanged: (selection) async {
               final next = selection.first;
 
