@@ -64,7 +64,7 @@ class AuthPage extends ConsumerWidget {
                               labelColor: scheme.onSurface,
                               unselectedLabelColor:
                                   scheme.onSurfaceVariant.withValues(alpha: 0.85),
-                              dividerColor: Colors.transparent,
+                              dividerColor: scheme.outlineVariant.withValues(alpha: 0.0),
                               indicatorSize: TabBarIndicatorSize.tab,
                               indicator: BoxDecoration(
                                 color: scheme.primary.withValues(alpha: 0.22),

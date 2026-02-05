@@ -71,11 +71,11 @@ class _BootPageState extends State<BootPage> {
               children: [
                 Text(
                   _title,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: Theme.of(context).colorScheme.onBackground,
+                          ),
                 )
                     .animate()
                     .fadeIn(duration: 650.ms, curve: Curves.easeOut)
@@ -102,12 +102,13 @@ class _TerminalLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return DefaultTextStyle(
       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: const Color(0xFF9FE7FF),
+            // 终端行更适合用 secondary 来承载“强调/高亮”的语义。
+            color: Theme.of(context).colorScheme.secondary,
             fontFamily: 'monospace',
             letterSpacing: 0.2,
           ) ??
-          const TextStyle(
-            color: Color(0xFF9FE7FF),
+          TextStyle(
+            color: Theme.of(context).colorScheme.secondary,
             fontFamily: 'monospace',
             fontSize: 16,
           ),

@@ -1,8 +1,11 @@
 import 'dart:convert';
 
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 class AgentLog {
+  static const _logPath = r'c:\dev\tenebralisapp\.cursor\debug.log';
 
   static void log({
     required String sessionId,
@@ -23,8 +26,19 @@ class AgentLog {
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       };
 
-      // Print NDJSON to stdout/logcat so it works on real devices.
-      debugPrint(jsonEncode(payload));
+      final line = '${jsonEncode(payload)}\n';
+
+      // Always print to stdout/logcat.
+      debugPrint(line);
+
+      // Also append to a file when possible.
+      // NOTE: On Android/iOS sandbox, writing to Windows path will fail.
+      // We keep stdout logging as the primary channel.
+      try {
+        final f = File(_logPath);
+        f.parent.createSync(recursive: true);
+        f.writeAsStringSync(line, mode: FileMode.append, flush: true);
+      } catch (_) {}
     } catch (_) {
       // ignore
     }

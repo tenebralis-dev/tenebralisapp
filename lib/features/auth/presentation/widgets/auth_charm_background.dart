@@ -76,7 +76,7 @@ class AuthCharmBackground extends StatelessWidget {
                 radius: 1.2,
                 colors: [
                   c1,
-                  Colors.transparent,
+                  c1.withValues(alpha: 0.0),
                 ],
               ),
             ),

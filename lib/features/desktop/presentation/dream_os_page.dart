@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 
 import '../../../app/system_ui.dart';
 
-import 'constants/dream_os_home_colors.dart';
 import '../../../app/strings.dart';
 import 'widgets/dream_os_scaffold.dart';
 import 'widgets/dock.dart';

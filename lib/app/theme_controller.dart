@@ -2,6 +2,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/debug/agent_log.dart';
+
+// 允许在 runApp 之前注入预加载值，避免启动时闪烁（system → 用户选择）。
+AppThemeOption? _preloadedThemeOption;
+
+void setPreloadedThemeOption(AppThemeOption? option) {
+  _preloadedThemeOption = option;
+}
+
 
 
 /// Unified theme selection (merged ThemeMode + ColorScheme).
@@ -15,37 +24,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// - Persisted via SharedPreferences.
 
 enum AppThemeOption {
-
   // Defaults
-
   defaultLight,
-
   defaultDark,
 
-
-
-  // Light palettes
-
-  rosaLight,
-
-  slateLight,
-
-  mintLight,
-
-  lavenderLight,
-
-
-
-  // Dark palettes
-
-  kraftDark,
-
-
-
   // Special
-
   system,
-
 }
 
 
@@ -67,41 +51,13 @@ class ThemeController extends StateNotifier<AppThemeOption> {
     final raw = prefs.getString(_prefsKey);
 
     switch (raw) {
-
       case 'defaultLight':
-
         return AppThemeOption.defaultLight;
-
       case 'defaultDark':
-
         return AppThemeOption.defaultDark;
-
-      case 'rosaLight':
-
-        return AppThemeOption.rosaLight;
-
-      case 'slateLight':
-
-        return AppThemeOption.slateLight;
-
-      case 'mintLight':
-
-        return AppThemeOption.mintLight;
-
-      case 'lavenderLight':
-
-        return AppThemeOption.lavenderLight;
-
-      case 'kraftDark':
-
-        return AppThemeOption.kraftDark;
-
       case 'system':
-
       default:
-
         return AppThemeOption.system;
-
     }
 
   }
@@ -134,21 +90,73 @@ final themeControllerProvider =
 
     StateNotifierProvider<ThemeController, AppThemeOption>((ref) {
 
-  final controller = ThemeController(initial: AppThemeOption.system);
+  final controller =
+      ThemeController(initial: _preloadedThemeOption ?? AppThemeOption.system);
+
+  // #region agent log
+  AgentLog.log(
+    sessionId: 'debug-session',
+    runId: 'run3',
+    hypothesisId: 'H7',
+    location: 'theme_controller.dart:provider',
+    message: 'providerInit',
+    data: {'initial': controller.state.name},
+  );
+  // #endregion
 
 
 
-  Future<void>(() async {
+  // 如果 main() 已经预加载并注入，则无需再异步读取，避免再次触发 state 变更。
+  if (_preloadedThemeOption == null) {
+    Future<void>(() async {
+
+    // #region agent log
+    final t0 = DateTime.now().millisecondsSinceEpoch;
+    AgentLog.log(
+      sessionId: 'debug-session',
+      runId: 'run3',
+      hypothesisId: 'H7',
+      location: 'theme_controller.dart:provider',
+      message: 'loadInitialStart',
+      data: {'current': controller.state.name},
+    );
+    // #endregion
 
     final initial = await ThemeController.loadInitial();
 
+    // #region agent log
+    AgentLog.log(
+      sessionId: 'debug-session',
+      runId: 'run3',
+      hypothesisId: 'H7',
+      location: 'theme_controller.dart:provider',
+      message: 'loadInitialDone',
+      data: {
+        'loaded': initial.name,
+        'elapsedMs': DateTime.now().millisecondsSinceEpoch - t0,
+      },
+    );
+    // #endregion
+
     if (initial != controller.state) {
+
+      // #region agent log
+      AgentLog.log(
+        sessionId: 'debug-session',
+        runId: 'run3',
+        hypothesisId: 'H7',
+        location: 'theme_controller.dart:provider',
+        message: 'applyLoaded',
+        data: {'from': controller.state.name, 'to': initial.name},
+      );
+      // #endregion
 
       controller.state = initial;
 
     }
 
-  });
+    });
+  }
 
 
 

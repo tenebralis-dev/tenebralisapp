@@ -49,8 +49,9 @@ class AuthGummyButton extends StatelessWidget {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.white.withValues(alpha: 0.26),
-                        Colors.transparent,
+                        // 不写死白色高光：使用 onPrimary 来跟随不同主题（浅/深）。
+                        scheme.onPrimary.withValues(alpha: 0.26),
+                        scheme.onPrimary.withValues(alpha: 0.0),
                       ],
                       stops: const [0.0, 0.62],
                     ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/debug/runtime_log.dart';
+import '../../../app/theme_controller.dart';
 import '../domain/theme_preset.dart';
 import '../domain/theme_tokens.dart';
 import 'widgets/preset_json_dialogs.dart';
@@ -17,8 +18,28 @@ class ThemeCustomizationPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final stateAsync = ref.watch(themePresetsControllerProvider);
 
+    final themeOption = ref.watch(themeControllerProvider);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('自定义配色')),
+      appBar: AppBar(
+        title: const Text('自定义配色'),
+        actions: [
+          // 深色/浅色切换（不跟随系统）
+          SegmentedButton<AppThemeOption>(
+            segments: const [
+              ButtonSegment(value: AppThemeOption.defaultLight, label: Text('浅色')),
+              ButtonSegment(value: AppThemeOption.defaultDark, label: Text('深色')),
+            ],
+            selected: {themeOption == AppThemeOption.system ? AppThemeOption.defaultDark : themeOption},
+            onSelectionChanged: (selection) async {
+              final next = selection.first;
+
+              await ref.read(themeControllerProvider.notifier).setTheme(next);
+            },
+          ),
+          const SizedBox(width: 12),
+        ],
+      ),
       body: stateAsync.when(
         data: (state) {
           final active = state.activePresetId;
@@ -47,11 +68,11 @@ class ThemeCustomizationPage extends ConsumerWidget {
                 child: FilledButton.icon(
                   onPressed: () async {
     final colors = ThemeTokens(
-      primary: '#6C63FF',
-      secondary: '#00D9FF',
-      background: '#0A0E21',
-      surface: '#1D1E33',
-      text: '#FFFFFF',
+      primary: '#AEE1E1',
+      secondary: '#D3E0DC',
+      background: '#ECE2E1',
+      surface: '#FCD1D1',
+      text: '#1B211A',
       error: '#FF5252',
     );
 
@@ -120,20 +141,6 @@ class _PresetLibrarySheet extends ConsumerWidget {
 
     final builtins = builtinThemePresets();
 
-    // #region agent log
-    RuntimeLog.log(
-      hypothesisId: 'A',
-      location: 'theme_customization_page.dart:_PresetLibrarySheet',
-      message: 'build',
-      data: {
-        'userPresets': state.presets.length,
-        'builtinPresets': builtins.length,
-        'viewInsetsBottom': MediaQuery.of(context).viewInsets.bottom,
-        'sizeH': MediaQuery.of(context).size.height,
-      },
-    );
-    // #endregion
-
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -144,21 +151,6 @@ class _PresetLibrarySheet extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // #region agent log
-              Builder(
-                builder: (context) {
-                  RuntimeLog.log(
-                    hypothesisId: 'B',
-                    location: 'theme_customization_page.dart:_PresetLibrarySheet',
-                    message: 'renderingColumn',
-                    data: {
-                      'childrenApprox': state.presets.length + builtins.length,
-                    },
-                  );
-                  return const SizedBox.shrink();
-                },
-              ),
-              // #endregion
               Text('方案库', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 12),
 
@@ -205,20 +197,46 @@ class _PresetLibrarySheet extends ConsumerWidget {
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('关闭'),
               ),
-              // #region agent log
-              Builder(
-                builder: (context) {
-                  RuntimeLog.log(
-                    hypothesisId: 'C',
-                    location: 'theme_customization_page.dart:_PresetLibrarySheet',
-                    message: 'afterCloseButton',
-                    data: const {},
-                  );
-                  return const SizedBox.shrink();
-                },
-              ),
-              // #endregion
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BuiltinPresetTile extends ConsumerWidget {
+  const _BuiltinPresetTile({required this.preset, this.dense = false});
+
+  final ThemePreset preset;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(16),
+      child: ListTile(
+        dense: dense,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        leading: _ColorPreview(colors: preset.lightTokens),
+        title: Text(preset.name),
+        subtitle: Text(
+          '预置方案',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
+        ),
+        trailing: ConstrainedBox(
+          constraints: const BoxConstraints.tightFor(width: 72, height: 40),
+          child: FilledButton(
+          onPressed: () async {
+            await ref
+                .read(themePresetsControllerProvider.notifier)
+                .applyBuiltinAsUserPreset(preset);
+            if (context.mounted) Navigator.of(context).pop();
+          },
+            child: const Text('应用'),
           ),
         ),
       ),
@@ -303,72 +321,6 @@ class _PresetTile extends ConsumerWidget {
             const PopupMenuItem(value: 'delete', child: Text('删除')),
             if (isActive)
               const PopupMenuItem(value: 'disable', child: Text('停止使用自定义方案')),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BuiltinPresetTile extends ConsumerWidget {
-  const _BuiltinPresetTile({required this.preset, this.dense = false});
-
-  final ThemePreset preset;
-  final bool dense;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final activeId =
-        ref.watch(themePresetsControllerProvider).valueOrNull?.activePresetId;
-
-    // Built-in is never "active" directly (active always points to user preset).
-    // We still show active state if user currently uses a copied "（预置）xxx".
-    final isPseudoActive = activeId != null &&
-        (ref.watch(themePresetsControllerProvider).valueOrNull?.presets.any(
-                  (p) =>
-                      p.id == activeId && p.lightTokens == preset.lightTokens && p.darkTokens == preset.darkTokens,
-                ) ??
-            false);
-
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(16),
-      child: ListTile(
-        dense: dense,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        leading: _ColorPreview(colors: preset.lightTokens),
-        title: Text(preset.name),
-        subtitle: Text(
-          isPseudoActive ? '当前启用（来自预置）' : '预置',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-          ),
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) async {
-            final ctrl = ref.read(themePresetsControllerProvider.notifier);
-            switch (v) {
-              case 'apply':
-                await ctrl.applyBuiltinAsUserPreset(preset);
-                break;
-              case 'copy':
-                if (!context.mounted) return;
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ThemePresetEditorPage(
-                      initialName: preset.name,
-                      initialLightTokens: preset.lightTokens,
-                      initialDarkTokens: preset.darkTokens,
-                      initialSyncEnabled: false,
-                    ),
-                  ),
-                );
-                break;
-            }
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'apply', child: Text('应用')),
-            PopupMenuItem(value: 'copy', child: Text('复制为我的方案')),
           ],
         ),
       ),
@@ -586,11 +538,30 @@ class _ThemePresetEditorPageState extends ConsumerState<ThemePresetEditorPage>
             ),
           ),
           const SizedBox(height: 12),
-          TabBar(
-            controller: _tabCtrl,
-            tabs: const [
-              Tab(text: '浅色'),
-              Tab(text: '深色'),
+          Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 0, label: Text('浅色')),
+                    ButtonSegment(value: 1, label: Text('深色')),
+                  ],
+                  selected: {_tabCtrl.index},
+                  onSelectionChanged: (selection) {
+                    final next = selection.first;
+
+                    _tabCtrl.animateTo(next);
+                    setState(() {});
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (_tabCtrl.index == 1)
+                TextButton.icon(
+                  onPressed: _deriveDarkFromLight,
+                  icon: const Icon(Icons.auto_fix_high_outlined),
+                  label: const Text('从浅色派生'),
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -602,15 +573,6 @@ class _ThemePresetEditorPageState extends ConsumerState<ThemePresetEditorPage>
                 title: isDarkTab ? '深色（HEX）' : '浅色（HEX）',
                 child: Column(
                   children: [
-                    if (isDarkTab)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: _deriveDarkFromLight,
-                          icon: const Icon(Icons.auto_fix_high_outlined),
-                          label: const Text('从浅色派生深色'),
-                        ),
-                      ),
                     _HexField(
                       label: 'Primary',
                       controller: isDarkTab ? _dPrimaryCtrl : _lPrimaryCtrl,

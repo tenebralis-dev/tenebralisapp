@@ -27,6 +27,30 @@ Color _onColorFor(Color bg) {
   return bg.computeLuminance() > 0.55 ? Colors.black : Colors.white;
 }
 
+/// Compute a readable text color for a given background.
+///
+/// Uses the same heuristic as [_onColorFor] for consistency.
+Color computeTextColor(Color background) => _onColorFor(background);
+
+String _toHex(Color c) =>
+    '#${c.value.toRadixString(16).padLeft(8, '0').toUpperCase()}';
+
+/// Ensure tokens contain a good `text` color.
+///
+/// This enables preset creation from a minimal palette without requiring
+/// users to hand-pick text colors.
+ThemeTokens ensureAutoText(ThemeTokens t) {
+  // Prefer background for overall text; if you later want to use surface,
+  // you can change the heuristic here.
+  final bg = _parseHexColor(t.background);
+  final computed = computeTextColor(bg);
+
+  // If user already provided something, keep it as-is.
+  if (t.text.trim().isNotEmpty) return t;
+
+  return t.copyWith(text: _toHex(computed));
+}
+
 /// Build a reasonably complete Material 3 ColorScheme from user tokens.
 ///
 /// Goals:
@@ -38,13 +62,15 @@ ColorScheme buildColorSchemeFromTokens(ThemeTokens t, Brightness brightness) {
   final secondary = _parseHexColor(t.secondary);
   final background = _parseHexColor(t.background);
   final surface = _parseHexColor(t.surface);
-  final onBackground = _parseHexColor(t.text);
+  final effectiveTokens = ensureAutoText(t);
 
-  final error = t.error == null
+  final onBackground = _parseHexColor(effectiveTokens.text);
+
+  final error = effectiveTokens.error == null
       ? (brightness == Brightness.dark
           ? const Color(0xFFFF5252)
           : const Color(0xFFB00020))
-      : _parseHexColor(t.error!);
+      : _parseHexColor(effectiveTokens.error!);
 
   // Containers: blend accent into background/surface.
   final primaryContainer = _mix(background, primary, brightness == Brightness.dark ? 0.25 : 0.18);
@@ -97,8 +123,14 @@ ColorScheme buildColorSchemeFromTokens(ThemeTokens t, Brightness brightness) {
       onInverseSurface: onInverseSurface,
       inversePrimary: inversePrimary,
       // Keep tertiary minimal; if user provides, use it.
-      tertiary: t.tertiary == null ? secondary : _parseHexColor(t.tertiary!),
-      onTertiary: _onColorFor(t.tertiary == null ? secondary : _parseHexColor(t.tertiary!)),
+      tertiary: effectiveTokens.tertiary == null
+          ? secondary
+          : _parseHexColor(effectiveTokens.tertiary!),
+      onTertiary: _onColorFor(
+        effectiveTokens.tertiary == null
+            ? secondary
+            : _parseHexColor(effectiveTokens.tertiary!),
+      ),
     );
   }
 
@@ -125,8 +157,14 @@ ColorScheme buildColorSchemeFromTokens(ThemeTokens t, Brightness brightness) {
     inverseSurface: inverseSurface,
     onInverseSurface: onInverseSurface,
     inversePrimary: inversePrimary,
-    tertiary: t.tertiary == null ? secondary : _parseHexColor(t.tertiary!),
-    onTertiary: _onColorFor(t.tertiary == null ? secondary : _parseHexColor(t.tertiary!)),
+    tertiary: effectiveTokens.tertiary == null
+        ? secondary
+        : _parseHexColor(effectiveTokens.tertiary!),
+    onTertiary: _onColorFor(
+      effectiveTokens.tertiary == null
+          ? secondary
+          : _parseHexColor(effectiveTokens.tertiary!),
+    ),
   );
 }
 
@@ -141,16 +179,15 @@ ThemeTokens deriveDarkTokens(ThemeTokens light) {
   final darkBg = _mix(const Color(0xFF0B0C10), bg, 0.08);
   final darkSurface = _mix(const Color(0xFF121318), surface, 0.10);
 
-  final text = const Color(0xFFEDEDED);
-
-  String hex(Color c) => '#${c.value.toRadixString(16).padLeft(8, '0').toUpperCase()}';
+  // Text is auto-derived for readability.
+  final text = computeTextColor(darkBg);
 
   return ThemeTokens(
     primary: light.primary,
     secondary: light.secondary,
-    background: hex(darkBg),
-    surface: hex(darkSurface),
-    text: hex(text),
+    background: _toHex(darkBg),
+    surface: _toHex(darkSurface),
+    text: _toHex(text),
     error: light.error,
     success: light.success,
     warning: light.warning,

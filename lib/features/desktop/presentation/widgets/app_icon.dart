@@ -11,7 +11,6 @@ import '../../icon_customization/presentation/controllers/icon_customization_con
 import '../../icon_customization/presentation/controllers/icon_shape_controller.dart';
 import '../../icon_customization/domain/icon_customization.dart';
 import '../../icon_customization/domain/icon_shape.dart';
-import '../constants/dream_os_home_colors.dart';
 import '../controllers/wallpaper_controller.dart';
 import '../controllers/wallpaper_contrast_controller.dart';
 
@@ -497,11 +496,13 @@ final Map<String, AppItem> _appRegistry = {
   ),
 
   // Page 3 Apps
-  'connection': AppItem(
+  'connection': const AppItem(
     id: 'connection',
     label: 'connection',
     icon: Icons.link,
-    color: DreamOSHomeColors.colorScheme.tertiary,
+    // 统一走主题入口：用 ColorScheme 的 tertiary（或由 token 推导）。
+    // 这里不写死具体色值，便于预设方案全局生效。
+    color: null,
     route: '/os/connection',
   ),
   'settings': const AppItem(

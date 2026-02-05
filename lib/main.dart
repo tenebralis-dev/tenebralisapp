@@ -7,8 +7,6 @@ import 'app/font_controller.dart';
 import 'app/locale_controller.dart';
 import 'app/router.dart';
 import 'app/theme_controller.dart';
-import 'app/ocean_dark_theme.dart';
-import 'app/app_color_schemes.dart';
 import 'app/system_ui.dart';
 import 'app/theme_data_builder.dart';
 import 'features/desktop/presentation/controllers/wallpaper_controller.dart';
@@ -18,7 +16,6 @@ import 'core/config/env_config.dart';
 import 'core/services/supabase_service.dart';
 import 'features/fonts/data/user_font_debug.dart';
 import 'features/theme/presentation/controllers/theme_presets_controller.dart';
-import 'core/debug/agent_log.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,6 +33,15 @@ Future<void> main() async {
 
   // Local storage (Hive) for connections cache/local-only configs.
   await Hive.initFlutter();
+
+  // 预加载 ThemeMode 选项（system/defaultDark/defaultLight），避免启动时先按 system 渲染，
+  // 再异步切换到用户保存的选项导致闪烁。
+  final preloadedThemeOption = await ThemeController.loadInitial();
+  setPreloadedThemeOption(preloadedThemeOption);
+
+  // 预加载主题配置，避免首帧渲染时因异步加载导致的"默认配色→自定义配色"闪烁
+  final preloadedThemeState = await ThemePresetsController.preload();
+  setPreloadedThemePresetsState(preloadedThemeState);
 
   runApp(const ProviderScope(child: TenebralisApp()));
 }
@@ -58,129 +64,79 @@ class TenebralisApp extends ConsumerWidget {
 
     final activeFontAsync = ref.watch(activeFontProvider);
 
+    // 统一主题入口：
+    // - 不再在此处写死 seedColor
+    // - ColorScheme 由 Theme Preset（tokens）决定；无 preset 时由内置默认 preset 决定
+    final presetStateAsync = ref.watch(themePresetsControllerProvider);
+    final presetsController = ref.read(themePresetsControllerProvider.notifier);
+
     final ThemeData baseTheme = activeFontAsync.maybeWhen(
       data: (activeFont) => applyActiveFontToTheme(
-        OceanDarkTheme.darkWithFont(fontFamily),
+        ThemeData(useMaterial3: true, brightness: Brightness.dark, fontFamily: fontFamily),
         activeFont,
       ),
-      orElse: () => OceanDarkTheme.darkWithFont(fontFamily),
+      orElse: () => ThemeData(useMaterial3: true, brightness: Brightness.dark, fontFamily: fontFamily),
+    );
+
+    // 先拿到“当前应生效的 scheme”（active preset or default）。
+    // 如果 preset 仍在 loading，优先用“上一次已知的本地 active preset”（controller state）
+    // 来构建首帧主题，避免启动闪烁。
+    final ColorScheme activeScheme = presetStateAsync.maybeWhen(
+      data: (s) => presetsController.activeColorScheme(Brightness.dark),
+      orElse: () => presetsController.activeColorScheme(Brightness.dark),
     );
 
     // Create base Light/Dark themes from current tokens output.
-    // Note: baseTheme is still used as a fallback for dark mode.
     ThemeData buildThemed(ThemeData base, Brightness b) {
       return buildAppThemeData(
-        scheme: base.colorScheme,
+        scheme: presetStateAsync.maybeWhen(
+          data: (_) => presetsController.activeColorScheme(b),
+          orElse: () => presetsController.activeColorScheme(b),
+        ),
         brightness: b,
         fontFamily: fontFamily,
       );
     }
 
-    final presetStateAsync = ref.watch(themePresetsControllerProvider);
-    final presetsController = ref.read(themePresetsControllerProvider.notifier);
-
-    // #region agent log
-    AgentLog.log(
-      sessionId: 'debug-session',
-      runId: 'run1',
-      hypothesisId: 'H1',
-      location: 'main.dart:theme',
-      message: 'themePresetsState',
-      data: {
-        'asyncType': presetStateAsync.runtimeType.toString(),
-        'hasValue': presetStateAsync.valueOrNull != null,
-        'activePresetId': presetStateAsync.valueOrNull?.activePresetId,
-        'presetsCount': presetStateAsync.valueOrNull?.presets.length,
-        'themeOption': themeOption.name,
-      },
+    // Keep baseTheme updated with active scheme for any downstream fallback usage.
+    final ThemeData baseThemeWithScheme = baseTheme.copyWith(
+      colorScheme: activeScheme,
+      scaffoldBackgroundColor: activeScheme.background,
     );
-    // #endregion
 
-    final ThemeData theme = presetStateAsync.maybeWhen(
-      data: (_) => presetsController.applyActivePresetToTheme(
-        buildThemed(baseTheme, Brightness.dark),
-        Brightness.dark,
-      ),
-      orElse: () => buildThemed(baseTheme, Brightness.dark),
-    );
+    final ThemeData theme = buildThemed(baseThemeWithScheme, Brightness.dark);
 
     final ThemeData darkTheme = presetStateAsync.maybeWhen(
-      // If a custom preset is active, use it as the darkTheme directly
-      // to ensure it takes effect even when themeMode is dark.
-      data: (s) => s.activePresetId == null
-          ? (switch (themeOption) {
-              AppThemeOption.kraftDark => AppColorSchemes.kraftDark(theme),
-              AppThemeOption.defaultDark => theme,
-              _ => theme,
-            })
-          : theme,
-      orElse: () => switch (themeOption) {
-        AppThemeOption.kraftDark => AppColorSchemes.kraftDark(theme),
-        AppThemeOption.defaultDark => theme,
-        _ => theme,
-      },
+      // 如果启用了自定义方案，直接使用对应 ThemeData。
+      data: (s) => theme,
+      orElse: () => theme,
     );
 
     // Base light theme starts from current baseTheme but with light brightness.
     // We intentionally avoid locking to DreamOSHomeColors so presets can cover
     // global UI (including DreamOS & Auth).
-    final ThemeData baseLightTheme = buildThemed(
-      ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C63FF),
-          brightness: Brightness.light,
-        ),
-        fontFamily: fontFamily,
+    final ThemeData baseLightTheme = activeFontAsync.maybeWhen(
+      data: (activeFont) => applyActiveFontToTheme(
+        ThemeData(useMaterial3: true, brightness: Brightness.light, fontFamily: fontFamily),
+        activeFont,
       ),
-      Brightness.light,
+      orElse: () => ThemeData(useMaterial3: true, brightness: Brightness.light, fontFamily: fontFamily),
     );
 
-    final ThemeData defaultLightTheme = presetStateAsync.maybeWhen(
-      data: (_) => presetsController.applyActivePresetToTheme(
-        baseLightTheme,
-        Brightness.light,
-      ),
-      orElse: () => baseLightTheme,
-    );
+    final ThemeData lightTheme = buildThemed(baseLightTheme, Brightness.light);
 
-    final ThemeData lightTheme = presetStateAsync.maybeWhen(
-      // If a custom preset is active, use it as the lightTheme directly.
-      data: (s) => s.activePresetId == null
-          ? (switch (themeOption) {
-              AppThemeOption.defaultLight => defaultLightTheme,
-              AppThemeOption.rosaLight => AppColorSchemes.rosaLight(defaultLightTheme),
-              AppThemeOption.slateLight => AppColorSchemes.slateLight(defaultLightTheme),
-              AppThemeOption.mintLight => AppColorSchemes.mintLight(defaultLightTheme),
-              AppThemeOption.lavenderLight =>
-                AppColorSchemes.lavenderLight(defaultLightTheme),
-              // Dark options should not affect ThemeData.theme
-              AppThemeOption.defaultDark => defaultLightTheme,
-              AppThemeOption.kraftDark => defaultLightTheme,
-              AppThemeOption.system => defaultLightTheme,
-            })
-          : presetsController.applyActivePresetToTheme(
-              baseLightTheme,
-              Brightness.light,
-            ),
-      orElse: () => switch (themeOption) {
-        AppThemeOption.defaultLight => defaultLightTheme,
-        AppThemeOption.rosaLight => AppColorSchemes.rosaLight(defaultLightTheme),
-        AppThemeOption.slateLight => AppColorSchemes.slateLight(defaultLightTheme),
-        AppThemeOption.mintLight => AppColorSchemes.mintLight(defaultLightTheme),
-        AppThemeOption.lavenderLight =>
-          AppColorSchemes.lavenderLight(defaultLightTheme),
-        AppThemeOption.defaultDark => defaultLightTheme,
-        AppThemeOption.kraftDark => defaultLightTheme,
-        AppThemeOption.system => defaultLightTheme,
-      },
-    );
+    final platformBrightness = MediaQuery.platformBrightnessOf(context);
 
-    final effectiveBrightness = switch (themeOption) {
-      AppThemeOption.defaultDark || AppThemeOption.kraftDark => Brightness.dark,
-      AppThemeOption.system => MediaQuery.platformBrightnessOf(context),
-      _ => Brightness.light,
+    final ThemeMode resolvedThemeMode = switch (themeOption) {
+      AppThemeOption.system => ThemeMode.system,
+      AppThemeOption.defaultLight => ThemeMode.light,
+      AppThemeOption.defaultDark => ThemeMode.dark,
+    };
+
+    final effectiveBrightness = switch (resolvedThemeMode) {
+      ThemeMode.light => Brightness.light,
+      ThemeMode.dark => Brightness.dark,
+      ThemeMode.system => platformBrightness,
     };
 
     final hasWallpaper = ref.watch(wallpaperControllerProvider).isNone == false;
@@ -199,32 +155,7 @@ class TenebralisApp extends ConsumerWidget {
       title: 'Tenebralis Dream System',
       theme: lightTheme,
       darkTheme: darkTheme,
-      themeMode: presetStateAsync.maybeWhen(
-        data: (s) {
-          if (s.activePresetId != null) {
-            // Custom preset should apply in both light and dark modes.
-            return ThemeMode.system;
-          }
-          return switch (themeOption) {
-            AppThemeOption.system => ThemeMode.system,
-            AppThemeOption.defaultLight ||
-            AppThemeOption.rosaLight ||
-            AppThemeOption.slateLight ||
-            AppThemeOption.mintLight ||
-            AppThemeOption.lavenderLight => ThemeMode.light,
-            AppThemeOption.defaultDark || AppThemeOption.kraftDark => ThemeMode.dark,
-          };
-        },
-        orElse: () => switch (themeOption) {
-          AppThemeOption.system => ThemeMode.system,
-          AppThemeOption.defaultLight ||
-          AppThemeOption.rosaLight ||
-          AppThemeOption.slateLight ||
-          AppThemeOption.mintLight ||
-          AppThemeOption.lavenderLight => ThemeMode.light,
-          AppThemeOption.defaultDark || AppThemeOption.kraftDark => ThemeMode.dark,
-        },
-      ),
+      themeMode: resolvedThemeMode,
       locale: locale,
       supportedLocales: const [
         Locale('zh'),

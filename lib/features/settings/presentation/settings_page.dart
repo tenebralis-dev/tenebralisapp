@@ -27,7 +27,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     return Scaffold(
       backgroundColor: scheme.background,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        // 统一由 theme_data_builder 管控 appBarTheme；这里不手写透明色。
+        backgroundColor: null,
         title: Text(s.settingsTitle),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
