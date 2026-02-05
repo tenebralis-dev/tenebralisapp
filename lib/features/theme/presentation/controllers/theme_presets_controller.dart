@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/debug/agent_log.dart';
 import '../../data/theme_preset_repository.dart';
 import '../../data/theme_preset_sync_service.dart';
 import '../../domain/theme_preset.dart';
@@ -43,21 +42,6 @@ class ThemePresetsController extends StateNotifier<AsyncValue<ThemePresetsState>
         super(initialState != null 
             ? AsyncValue.data(initialState) 
             : const AsyncValue.loading()) {
-    // #region agent log
-    AgentLog.log(
-      sessionId: 'debug-session',
-      runId: 'run2',
-      hypothesisId: 'H4',
-      location: 'theme_presets_controller.dart:ctor',
-      message: 'controllerInit',
-      data: {
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'hasInitialState': initialState != null,
-        'initialActivePresetId': initialState?.activePresetId,
-      },
-    );
-    // #endregion
-    
     // 如果有初始状态，设置 _lastKnownState 以支持后续回退
     if (initialState != null) {
       _lastKnownState = initialState;
@@ -72,26 +56,7 @@ class ThemePresetsController extends StateNotifier<AsyncValue<ThemePresetsState>
   // 用于首帧回退：当 state 处于 loading 时，仍可用上一次已知的值避免闪烁。
   ThemePresetsState? _lastKnownState;
 
-  // #region agent log
-  bool get hasLastKnownState => _lastKnownState != null;
-  // #endregion
-
   Future<void> _load({bool skipLocalIfPreloaded = false}) async {
-    // #region agent log
-    final loadStart = DateTime.now().millisecondsSinceEpoch;
-    AgentLog.log(
-      sessionId: 'debug-session',
-      runId: 'run2',
-      hypothesisId: 'H1,H2',
-      location: 'theme_presets_controller.dart:_load',
-      message: 'loadStart',
-      data: {
-        'loadStartTimestamp': loadStart,
-        'skipLocalIfPreloaded': skipLocalIfPreloaded,
-      },
-    );
-    // #endregion
-
     // 如果已有预加载数据，跳过本地加载步骤，直接进行远端同步
     if (!skipLocalIfPreloaded) {
       state = const AsyncValue.loading();
@@ -99,21 +64,6 @@ class ThemePresetsController extends StateNotifier<AsyncValue<ThemePresetsState>
     
     try {
       final data = await _repository.loadAll();
-
-      // #region agent log
-      AgentLog.log(
-        sessionId: 'debug-session',
-      runId: 'run2',
-      hypothesisId: 'H2,H5',
-      location: 'theme_presets_controller.dart:_load',
-      message: 'afterLoadAll',
-        data: {
-          'activeId': data.activeId,
-          'localPresetsCount': data.presets.length,
-          'elapsedMs': DateTime.now().millisecondsSinceEpoch - loadStart,
-        },
-      );
-      // #endregion
 
       // 先让本地主题立即生效，避免启动时“默认→自定义”的闪烁。
       // 远端 pull/merge 将在后面继续执行，并在必要时刷新 state。
@@ -125,55 +75,11 @@ class ThemePresetsController extends StateNotifier<AsyncValue<ThemePresetsState>
 
       state = AsyncValue.data(localState);
 
-      // #region agent log
-      AgentLog.log(
-        sessionId: 'debug-session',
-      runId: 'run2',
-      hypothesisId: 'H1,H5',
-      location: 'theme_presets_controller.dart:_load',
-      message: 'stateReadyLocal',
-      data: {
-          'activeId': data.activeId,
-          'presetsCount': data.presets.length,
-          'lastKnownStateSet': _lastKnownState != null,
-          'elapsedMs': DateTime.now().millisecondsSinceEpoch - loadStart,
-        },
-      );
-      // #endregion
-
       // Pull remote & merge when available.
       var presets = await _syncService.pullAndMerge();
 
-      // #region agent log
-      AgentLog.log(
-        sessionId: 'debug-session',
-      runId: 'run2',
-      hypothesisId: 'H3',
-      location: 'theme_presets_controller.dart:_load',
-      message: 'afterPullAndMerge',
-        data: {
-          'mergedPresetsCount': presets.length,
-          'elapsedMs': DateTime.now().millisecondsSinceEpoch - loadStart,
-        },
-      );
-      // #endregion
-
       // Push pending items.
       presets = await _syncService.pushPending();
-
-      // #region agent log
-      AgentLog.log(
-        sessionId: 'debug-session',
-      runId: 'run2',
-      hypothesisId: 'H3',
-      location: 'theme_presets_controller.dart:_load',
-      message: 'afterPushPending',
-        data: {
-          'presetsCount': presets.length,
-          'elapsedMs': DateTime.now().millisecondsSinceEpoch - loadStart,
-        },
-      );
-      // #endregion
 
       // Keep active preset id stable:
       // - If activeId is null, keep it null (no implicit activation)
@@ -199,21 +105,6 @@ class ThemePresetsController extends StateNotifier<AsyncValue<ThemePresetsState>
         _lastKnownState = mergedState;
         state = AsyncValue.data(mergedState);
       }
-
-      // #region agent log
-      AgentLog.log(
-        sessionId: 'debug-session',
-      runId: 'run2',
-      hypothesisId: 'H3',
-      location: 'theme_presets_controller.dart:_load',
-      message: 'stateReady',
-        data: {
-          'effectiveActiveId': effectiveActiveId,
-          'presetsCount': presets.length,
-          'elapsedMs': DateTime.now().millisecondsSinceEpoch - loadStart,
-        },
-      );
-      // #endregion
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
@@ -341,25 +232,6 @@ class ThemePresetsController extends StateNotifier<AsyncValue<ThemePresetsState>
     final current = state.valueOrNull ?? _lastKnownState;
     final active = current?.activePreset;
 
-    // #region agent log
-    final usingDefaults = active == null;
-    AgentLog.log(
-      sessionId: 'debug-session',
-      runId: 'run2',
-      hypothesisId: 'H1,H5',
-      location: 'theme_presets_controller.dart:activeColorScheme',
-      message: 'schemeResolution',
-      data: {
-        'brightness': brightness.toString(),
-        'stateHasValue': state.valueOrNull != null,
-        'lastKnownStateExists': _lastKnownState != null,
-        'currentExists': current != null,
-        'activePresetId': current?.activePresetId,
-        'usingDefaults': usingDefaults,
-      },
-    );
-    // #endregion
-
     ThemeTokens tokens;
     if (active != null) {
       tokens = brightness == Brightness.dark ? active.darkTokens : active.lightTokens;
@@ -368,27 +240,7 @@ class ThemePresetsController extends StateNotifier<AsyncValue<ThemePresetsState>
           ? ThemePresetDefaults.darkTokens
           : ThemePresetDefaults.lightTokens;
     }
-
-    final scheme = buildColorSchemeFromTokens(tokens, brightness);
-
-    // #region agent log
-    AgentLog.log(
-      sessionId: 'debug-session',
-      runId: 'run3',
-      hypothesisId: 'H6,H7,H8',
-      location: 'theme_presets_controller.dart:activeColorScheme',
-      message: 'schemeValues',
-      data: {
-        'brightness': brightness.toString(),
-        'activePresetId': current?.activePresetId,
-        'schemePrimary': scheme.primary.value,
-        'schemeSecondary': scheme.secondary.value,
-        'schemeBackground': scheme.background.value,
-      },
-    );
-    // #endregion
-
-    return scheme;
+    return buildColorSchemeFromTokens(tokens, brightness);
   }
 
   ThemeData applyActivePresetToTheme(ThemeData base, Brightness brightness) {
@@ -409,21 +261,6 @@ class ThemePresetsController extends StateNotifier<AsyncValue<ThemePresetsState>
     try {
       final repository = ThemePresetRepository();
       final data = await repository.loadAll();
-      
-      // #region agent log
-      AgentLog.log(
-        sessionId: 'debug-session',
-        runId: 'run2',
-        hypothesisId: 'FIX',
-        location: 'theme_presets_controller.dart:preload',
-        message: 'preloadComplete',
-        data: {
-          'activeId': data.activeId,
-          'presetsCount': data.presets.length,
-        },
-      );
-      // #endregion
-      
       return ThemePresetsState(
         presets: data.presets,
         activePresetId: data.activeId,
