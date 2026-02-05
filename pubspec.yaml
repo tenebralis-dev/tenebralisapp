@@ -1,0 +1,115 @@
+name: tenebralis_app
+description: "Tenebralis Dream System (界影浮光) - A Diegetic Interface Application"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Navigation
+  go_router: ^14.8.1
+
+  # Backend & Auth
+  supabase_flutter: ^2.9.0
+
+  # UI/Animation
+  flutter_animate: ^4.5.2
+  flutter_staggered_grid_view: ^0.7.0
+  # Networking
+  dio: ^5.8.0+1
+
+  # Local Storage
+  shared_preferences: ^2.5.4
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  uuid: ^4.5.1
+
+  # Data Models
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # Icons
+  cupertino_icons: ^1.0.8
+  flutter_dotenv: ^6.0.0
+  intl: ^0.20.2
+  flutter_secure_storage: ^10.0.0
+  path_provider: ^2.1.5
+  file_picker: ^10.3.10
+  image_picker: ^1.1.2
+  url_launcher: ^6.3.1
+  cached_network_image: ^3.4.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # App icon generator
+  flutter_launcher_icons: ^0.14.4
+
+  # Code Generation
+  build_runner: ^2.4.14
+  riverpod_generator: ^2.6.3
+  freezed: ^2.5.8
+  json_serializable: ^6.9.3
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+  uses-material-design: true
+
+  assets:
+    - .env
+    - assets/icon.png
+    - assets/images/
+    - assets/wallpapers/
+    - assets/fonts/ChillRoundM/LICENSE.txt
+
+  fonts:
+    - family: ChillRoundM
+      fonts:
+        - asset: assets/fonts/ChillRoundM/ChillRoundM.ttf
+
+    - family: NotoSansSC
+      fonts:
+        - asset: assets/fonts/Noto/NotoSansSC-VariableFont_wght.ttf
+
+    - family: Maruko
+      fonts:
+        - asset: assets/fonts/maruko/MarukoGothicCJKsc-Regular.ttf
+
+    - family: EarlySummerSerif
+      fonts:
+        - asset: assets/fonts/EarlySummerSerif/EarlySummerSerif-Regular.ttf
+
+    - family: mashanzheng
+      fonts:
+        - asset: assets/fonts/mashanzheng/MaShanZheng-Regular.ttf
+
+    - family: MoonStarsKai
+      fonts:
+        - asset: assets/fonts/MoonStarsKai/MoonStarsKai-Regular.ttf
+
+    - family: WenYuanSans
+      fonts:
+        - asset: assets/fonts/WenYuanSansSC/WenYuanSansSC-Regular.ttf
+
+    - family: XCDUANZHUANGSONGTI
+      fonts:
+        - asset: assets/fonts/XCDUANZHUANGSONGTI/XCDUANZHUANGSONGTI.ttf
+
+    - family: YShi-Written
+      fonts:
+        - asset: assets/fonts/YShi-Written/YShiWritten-Regular.ttf

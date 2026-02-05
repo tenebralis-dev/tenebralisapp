@@ -1,0 +1,11 @@
+# Generated app launcher icons
+# Run: flutter pub get && dart run flutter_launcher_icons
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: assets/icon.png
+  # Optional adaptive icons (Android 8.0+). If you have separate layers, fill these:
+  # adaptive_icon_background: "#0B0F1A"
+  # adaptive_icon_foreground: assets/icon_foreground.png
