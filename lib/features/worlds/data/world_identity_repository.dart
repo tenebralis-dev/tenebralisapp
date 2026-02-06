@@ -33,7 +33,20 @@ class WorldIdentityRepository {
     required String identityName,
     String? promptIdentityText,
   }) async {
+    // #region agent log
+    void _log(String hypothesisId, String message, Map<String, dynamic> data) {
+      // ignore: avoid_print
+      print('[agentlog] $hypothesisId $message $data');
+    }
+    // #endregion
+
     final user = SupabaseService.currentUser;
+    _log('H2', 'create_enter', {
+      'worldId': worldId,
+      'identityNameLen': identityName.length,
+      'hasUser': user != null,
+    });
+
     if (user == null) throw const AuthException('Not authenticated');
 
     final insertData = <String, dynamic>{
@@ -44,8 +57,29 @@ class WorldIdentityRepository {
       'is_active': true,
     }..removeWhere((k, v) => v == null);
 
-    final row = await _client.from(_table).insert(insertData).select().single();
-    return WorldIdentity.fromJson(row);
+    _log('H2', 'before_insert', {
+      'keys': insertData.keys.toList(),
+      'userIdPrefix': user.id.substring(0, 6),
+    });
+
+    try {
+      final row = await _client.from(_table).insert(insertData).select().single();
+
+      _log('H2', 'after_insert', {
+        'rowKeys': (row as Map).keys.toList(),
+        'id': row['id'],
+      });
+
+      return WorldIdentity.fromJson(Map<String, dynamic>.from(row));
+    } on PostgrestException catch (e) {
+      // Common cause: Supabase schema cache stale.
+      _log('H2', 'postgrest_exception', {
+        'code': e.code,
+        'message': e.message,
+        'details': e.details,
+      });
+      rethrow;
+    }
   }
 }
 

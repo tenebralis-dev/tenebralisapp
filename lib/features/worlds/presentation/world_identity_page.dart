@@ -82,6 +82,13 @@ class WorldIdentityPage extends ConsumerWidget {
     final promptController = TextEditingController();
 
     try {
+      // #region agent log
+      void _log(String hypothesisId, String message, Map<String, dynamic> data) {
+        // ignore: avoid_print
+        print('[agentlog] $hypothesisId $message $data');
+      }
+      // #endregion
+
       final ok = await showDialog<bool>(
         context: context,
         builder: (context) {
@@ -117,19 +124,51 @@ class WorldIdentityPage extends ConsumerWidget {
         },
       );
 
+      _log('H1', 'dialog_closed', {
+        'ok': ok,
+        'worldId': worldId,
+      });
+
       if (ok != true) return;
       final name = nameController.text.trim();
-      if (name.isEmpty) return;
+      final prompt = promptController.text.trim();
+
+      _log('H1', 'create_clicked', {
+        'nameLen': name.length,
+        'promptLen': prompt.length,
+      });
+
+      if (name.isEmpty) {
+        _log('H1', 'name_empty_early_return', {});
+        return;
+      }
 
       final repo = ref.read(worldIdentityRepositoryProvider);
-      await repo.create(
-        worldId: worldId,
-        identityName: name,
-        promptIdentityText:
-            promptController.text.trim().isEmpty ? null : promptController.text.trim(),
-      );
+      try {
+        final created = await repo.create(
+          worldId: worldId,
+          identityName: name,
+          promptIdentityText: prompt.isEmpty ? null : prompt,
+        );
+        _log('H2', 'repo_create_success', {
+          'id': created.id,
+          'identityName': created.identityName,
+        });
+      } catch (e) {
+        _log('H2', 'repo_create_error', {
+          'error': e.toString(),
+        });
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('创建身份失败：$e')),
+          );
+        }
+        return;
+      }
 
       ref.invalidate(_identitiesProvider(worldId));
+      _log('H3', 'invalidate_provider', {'worldId': worldId});
     } finally {
       nameController.dispose();
       promptController.dispose();
