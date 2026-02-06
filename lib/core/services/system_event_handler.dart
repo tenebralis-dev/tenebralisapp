@@ -2,10 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../features/chronicles/data/models/chronicle_model.dart';
-import '../../features/profiles/data/repositories/profile_repository.dart';
-import '../../features/profiles/data/models/profile_model.dart';
-import '../../features/profiles/data/models/relationship_model.dart';
 import '../../features/chronicles/data/repositories/chronicle_repository.dart';
+import '../../features/auth/domain/users_repository.dart';
+import '../../features/auth/domain/host_profile.dart';
 
 part 'system_event_handler.g.dart';
 
@@ -40,11 +39,11 @@ class EventProcessingResult {
 /// Processes system events from AI responses and updates game state
 class SystemEventHandler {
   SystemEventHandler({
-    required this.profileRepository,
+    required this.usersRepository,
     required this.chronicleRepository,
   });
 
-  final ProfileRepository profileRepository;
+  final UsersRepository usersRepository;
   final ChronicleRepository chronicleRepository;
 
   /// Process a list of system events
@@ -75,19 +74,18 @@ class SystemEventHandler {
           return await _handlePointChange(userId, worldId, event);
 
         case SystemEventTypes.updateQuest:
-          return await _handleQuestUpdate(userId, worldId!, event);
-
         case SystemEventTypes.updateAffection:
-          return await _handleAffectionUpdate(userId, worldId!, event);
-
         case SystemEventTypes.unlockItem:
-          return await _handleUnlockItem(userId, event);
-
         case SystemEventTypes.unlockAchievement:
-          return await _handleUnlockAchievement(userId, event);
-
         case SystemEventTypes.unlockWorld:
-          return await _handleUnlockWorld(userId, event);
+          // Legacy profile/relationship/inventory features were stored in `profiles`.
+          // New DB baseline (users/user_settings + Part2~Part7 tables) does not include them.
+          // These events will be re-implemented on top of tasks/achievements/currency/inventory later.
+          return EventProcessingResult(
+            event: event,
+            success: false,
+            message: '该事件类型尚未迁移到新数据模型: ${event.type}',
+          );
 
         case SystemEventTypes.notification:
           return _handleNotification(event);
@@ -118,7 +116,9 @@ class SystemEventHandler {
     final reason = event.reason ?? '未知原因';
 
     // Update profile points
-    final profile = await profileRepository.updateGlobalPoints(userId, amount);
+    // New DB baseline doesn't support server-side "global points" mutations yet.
+    // Keep event processing best-effort and return current host profile snapshot.
+    final HostProfile? profile = await usersRepository.getCurrent();
 
     // Create transaction chronicle
     await chronicleRepository.createTransactionChronicle(
@@ -135,237 +135,11 @@ class SystemEventHandler {
       event: event,
       success: true,
       message: message,
-      data: {'newPoints': profile.globalPoints},
+      data: {'newPoints': profile?.expPoints},
     );
   }
 
-  /// Handle quest update event
-  Future<EventProcessingResult> _handleQuestUpdate(
-    String userId,
-    String worldId,
-    SystemEvent event,
-  ) async {
-    final questId = event.questId;
-    final status = event.status;
-
-    if (questId == null || status == null) {
-      return EventProcessingResult(
-        event: event,
-        success: false,
-        message: '缺少任务ID或状态',
-      );
-    }
-
-    // Update relationship (quest progress)
-    await profileRepository.upsertRelationship(
-      RelationshipModel(
-        id: '',
-        userId: userId,
-        worldId: worldId,
-        targetType: RelationshipTargetType.quest,
-        targetKey: questId,
-        value: _questStatusToValue(status),
-        state: {'status': status},
-      ),
-    );
-
-    String message;
-    switch (status) {
-      case 'completed':
-        message = '任务完成！';
-        break;
-      case 'in_progress':
-        message = '任务进行中';
-        break;
-      case 'failed':
-        message = '任务失败';
-        break;
-      default:
-        message = '任务状态更新: $status';
-    }
-
-    return EventProcessingResult(
-      event: event,
-      success: true,
-      message: message,
-    );
-  }
-
-  /// Handle affection update event
-  Future<EventProcessingResult> _handleAffectionUpdate(
-    String userId,
-    String worldId,
-    SystemEvent event,
-  ) async {
-    final npcKey = event.npcKey;
-    final value = event.value ?? 0;
-
-    if (npcKey == null) {
-      return EventProcessingResult(
-        event: event,
-        success: false,
-        message: '缺少NPC Key',
-      );
-    }
-
-    // Update relationship (affection)
-    await profileRepository.updateRelationshipValue(
-      userId,
-      worldId,
-      RelationshipTargetType.npc,
-      npcKey,
-      value,
-    );
-
-    final message = value >= 0 ? '好感度 +$value' : '好感度 $value';
-
-    return EventProcessingResult(
-      event: event,
-      success: true,
-      message: message,
-    );
-  }
-
-  /// Handle unlock item event
-  Future<EventProcessingResult> _handleUnlockItem(
-    String userId,
-    SystemEvent event,
-  ) async {
-    final itemId = event.data['item_id'] as String?;
-    if (itemId == null) {
-      return EventProcessingResult(
-        event: event,
-        success: false,
-        message: '缺少物品ID',
-      );
-    }
-
-    final profile = await profileRepository.getProfile(userId);
-    if (profile == null) {
-      return EventProcessingResult(
-        event: event,
-        success: false,
-        message: '用户不存在',
-      );
-    }
-
-    final currentItems = profile.inventory?.items ?? [];
-    if (currentItems.contains(itemId)) {
-      return EventProcessingResult(
-        event: event,
-        success: true,
-        message: '物品已拥有',
-      );
-    }
-
-    final newInventory = profile.inventory?.copyWith(
-          items: [...currentItems, itemId],
-        ) ??
-        UserInventory(items: [itemId]);
-
-    await profileRepository.updateInventory(userId, newInventory);
-
-    return EventProcessingResult(
-      event: event,
-      success: true,
-      message: '获得新物品！',
-      data: {'itemId': itemId},
-    );
-  }
-
-  /// Handle unlock achievement event
-  Future<EventProcessingResult> _handleUnlockAchievement(
-    String userId,
-    SystemEvent event,
-  ) async {
-    final achievementId = event.data['achievement_id'] as String?;
-    if (achievementId == null) {
-      return EventProcessingResult(
-        event: event,
-        success: false,
-        message: '缺少成就ID',
-      );
-    }
-
-    final profile = await profileRepository.getProfile(userId);
-    if (profile == null) {
-      return EventProcessingResult(
-        event: event,
-        success: false,
-        message: '用户不存在',
-      );
-    }
-
-    final currentAchievements = profile.inventory?.achievements ?? [];
-    if (currentAchievements.contains(achievementId)) {
-      return EventProcessingResult(
-        event: event,
-        success: true,
-        message: '成就已解锁',
-      );
-    }
-
-    final newInventory = profile.inventory?.copyWith(
-          achievements: [...currentAchievements, achievementId],
-        ) ??
-        UserInventory(achievements: [achievementId]);
-
-    await profileRepository.updateInventory(userId, newInventory);
-
-    return EventProcessingResult(
-      event: event,
-      success: true,
-      message: '成就解锁！',
-      data: {'achievementId': achievementId},
-    );
-  }
-
-  /// Handle unlock world event
-  Future<EventProcessingResult> _handleUnlockWorld(
-    String userId,
-    SystemEvent event,
-  ) async {
-    final worldId = event.data['world_id'] as String?;
-    if (worldId == null) {
-      return EventProcessingResult(
-        event: event,
-        success: false,
-        message: '缺少世界ID',
-      );
-    }
-
-    final profile = await profileRepository.getProfile(userId);
-    if (profile == null) {
-      return EventProcessingResult(
-        event: event,
-        success: false,
-        message: '用户不存在',
-      );
-    }
-
-    final currentWorlds = profile.inventory?.unlockedWorlds ?? [];
-    if (currentWorlds.contains(worldId)) {
-      return EventProcessingResult(
-        event: event,
-        success: true,
-        message: '世界已解锁',
-      );
-    }
-
-    final newInventory = profile.inventory?.copyWith(
-          unlockedWorlds: [...currentWorlds, worldId],
-        ) ??
-        UserInventory(unlockedWorlds: [worldId]);
-
-    await profileRepository.updateInventory(userId, newInventory);
-
-    return EventProcessingResult(
-      event: event,
-      success: true,
-      message: '新世界解锁！',
-      data: {'worldId': worldId},
-    );
-  }
+  // Legacy handlers removed (profiles/relationships/inventory-based).
 
   /// Handle notification event (no database changes, just UI notification)
   EventProcessingResult _handleNotification(SystemEvent event) {
@@ -380,28 +154,13 @@ class SystemEventHandler {
     );
   }
 
-  /// Convert quest status string to numeric value
-  int _questStatusToValue(String status) {
-    switch (status) {
-      case 'not_started':
-        return 0;
-      case 'in_progress':
-        return 1;
-      case 'completed':
-        return 2;
-      case 'failed':
-        return -1;
-      default:
-        return 0;
-    }
-  }
 }
 
 /// Provider for System Event Handler
 @riverpod
 SystemEventHandler systemEventHandler(Ref ref) {
   return SystemEventHandler(
-    profileRepository: ref.watch(profileRepositoryProvider),
+    usersRepository: ref.watch(usersRepositoryProvider),
     chronicleRepository: ref.watch(chronicleRepositoryProvider),
   );
 }

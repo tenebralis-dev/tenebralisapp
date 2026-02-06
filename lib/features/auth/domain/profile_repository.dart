@@ -10,10 +10,10 @@ import 'user_profile.dart';
 
 part 'profile_repository.g.dart';
 
-/// Profile repository (Auth-domain)
+/// Legacy Profile repository (Auth-domain)
 ///
-/// - Profile: host account info in `profiles` table.
-/// - Identity: avatar/role info stored in `profiles.current_session` JSON.
+/// This was previously backed by `public.profiles`.
+/// It is kept temporarily for compatibility, but SHOULD NOT be used by new code.
 class ProfileRepository {
   ProfileRepository(this._client);
 

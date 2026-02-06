@@ -7,7 +7,7 @@ part of 'system_event_handler.dart';
 // **************************************************************************
 
 String _$systemEventHandlerHash() =>
-    r'7ad26dfe861e38de703b2cbf6b3b9c42bfebc24d';
+    r'75a6e3ebb03f0162eafcd2ef6c6a19e6071a018a';
 
 /// Provider for System Event Handler
 ///

@@ -13,6 +13,8 @@ import '../features/desktop/icon_customization/presentation/icon_customize_page.
 import '../features/theme/presentation/theme_customization_page.dart';
 import '../features/customize/presentation/customize_hub_page.dart';
 import '../features/worlds/presentation/worlds_page.dart';
+import '../features/worlds/presentation/world_identity_page.dart';
+import '../features/worlds/presentation/world_save_states_page.dart';
 
 /// Centralized route path constants.
 ///
@@ -88,6 +90,25 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/os/apps/worlds',
         builder: (context, state) => const WorldsPage(),
+        routes: [
+          GoRoute(
+            path: ':worldId/identities',
+            builder: (context, state) {
+              final worldId = state.pathParameters['worldId']!;
+              return WorldIdentityPage(worldId: worldId);
+            },
+            routes: [
+              GoRoute(
+                path: ':identityId/saves',
+                builder: (context, state) {
+                  final worldId = state.pathParameters['worldId']!;
+                  final identityId = state.pathParameters['identityId']!;
+                  return WorldSaveStatesPage(worldId: worldId, identityId: identityId);
+                },
+              ),
+            ],
+          ),
+        ],
       ),
       // Minimal app routes (placeholder pages) so tapping icons works.
       GoRoute(

@@ -2,76 +2,76 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../profiles/data/repositories/profile_repository.dart';
-import '../../profiles/data/models/profile_model.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../auth/domain/user_settings_repository.dart';
+import '../../auth/domain/user_settings.dart';
 import '../domain/user_font.dart';
 import 'user_font_local_prefs.dart';
 import 'user_font_prefs.dart';
 
-/// Repository for user fonts stored in `profiles.preferences`.
+/// Repository for user fonts stored in `user_settings.ui_config`.
 ///
 /// Sync strategy:
 /// - Store only metadata (no font file sync)
 class UserFontRepository {
-  UserFontRepository(this._profileRepo);
+  UserFontRepository(this._settingsRepo);
 
-  final ProfileRepository _profileRepo;
+  final UserSettingsRepository _settingsRepo;
 
   Future<List<UserFont>> list() async {
-    final profile = await _getOrCreateProfile();
+    final settings = await _getOrCreateSettings();
 
     // Local-only mode (not logged in)
-    if (profile.id == 'local') {
+    if (settings.userId == 'local') {
       return UserFontLocalPrefs.list();
     }
 
-    final prefs = await _loadPreferencesRaw(profile);
+    final prefs = await _loadUiConfigRaw(settings);
     return _decodeFontsFromPrefs(prefs);
   }
 
   Future<String?> getSelectedFontId() async {
-    final profile = await _getOrCreateProfile();
+    final settings = await _getOrCreateSettings();
 
     // Local-only mode
-    if (profile.id == 'local') {
+    if (settings.userId == 'local') {
       return UserFontLocalPrefs.getSelectedFontId();
     }
 
-    final prefs = await _loadPreferencesRaw(profile);
+    final prefs = await _loadUiConfigRaw(settings);
     return _decodeSelectedIdFromPrefs(prefs);
   }
 
   Future<void> setSelectedFontId(String? id) async {
-    final profile = await _getOrCreateProfile();
+    final settings = await _getOrCreateSettings();
 
     // Local-only mode
-    if (profile.id == 'local') {
+    if (settings.userId == 'local') {
       await UserFontLocalPrefs.setSelectedFontId(id);
       return;
     }
 
-    final userId = profile.id;
-    final json = await _loadPreferencesRaw(profile);
+    final userId = settings.userId;
+    final json = await _loadUiConfigRaw(settings);
     if (id == null) {
       json.remove(UserFontPrefsKeys.selectedFontId);
     } else {
       json[UserFontPrefsKeys.selectedFontId] = id;
     }
-    await _profileRepo.updateProfile(userId, {'preferences': json});
+    await _settingsRepo.upsertUiConfigPatch(json);
   }
 
   Future<void> upsert(UserFont font) async {
-    final profile = await _getOrCreateProfile();
+    final settings = await _getOrCreateSettings();
 
     // Local-only mode
-    if (profile.id == 'local') {
+    if (settings.userId == 'local') {
       await UserFontLocalPrefs.upsert(font);
       return;
     }
 
-    final userId = profile.id;
-    final json = await _loadPreferencesRaw(profile);
+    final userId = settings.userId;
+    final json = await _loadUiConfigRaw(settings);
     final fonts = _decodeFontsFromPrefs(json);
     final idx = fonts.indexWhere((f) => f.id == font.id);
     if (idx >= 0) {
@@ -81,20 +81,20 @@ class UserFontRepository {
     }
     json[UserFontPrefsKeys.userFonts] = fonts.map((e) => e.toJson()).toList();
 
-    await _profileRepo.updateProfile(userId, {'preferences': json});
+    await _settingsRepo.upsertUiConfigPatch(json);
   }
 
   Future<void> removeById(String id) async {
-    final profile = await _getOrCreateProfile();
+    final settings = await _getOrCreateSettings();
 
     // Local-only mode
-    if (profile.id == 'local') {
+    if (settings.userId == 'local') {
       await UserFontLocalPrefs.removeById(id);
       return;
     }
 
-    final userId = profile.id;
-    final json = await _loadPreferencesRaw(profile);
+    final userId = settings.userId;
+    final json = await _loadUiConfigRaw(settings);
     final fonts = _decodeFontsFromPrefs(json);
     fonts.removeWhere((f) => f.id == id);
     json[UserFontPrefsKeys.userFonts] = fonts.map((e) => e.toJson()).toList();
@@ -105,36 +105,37 @@ class UserFontRepository {
       json.remove(UserFontPrefsKeys.selectedFontId);
     }
 
-    await _profileRepo.updateProfile(userId, {'preferences': json});
+    await _settingsRepo.upsertUiConfigPatch(json);
   }
 
-  Future<ProfileModel> _getOrCreateProfile() async {
+  Future<UserSettings> _getOrCreateSettings() async {
     final user = SupabaseService.currentUser;
     if (user == null) {
-      // Not logged in: return a pseudo profile with local-only preferences.
-      // For v1, user fonts are only available after login.
-      return ProfileModel(id: 'local', preferences: const UserPreferences());
+      // Not logged in: local-only preferences.
+      return const UserSettings(userId: 'local');
     }
 
-    final existing = await _profileRepo.getProfile(user.id);
+    final existing = await _settingsRepo.getCurrent();
     if (existing != null) return existing;
-    return await _profileRepo.createProfile(user.id);
+
+    // user_settings is auto-created by trigger on signup. If missing, fail loudly.
+    throw Exception('user_settings not found for current user');
   }
 
-  Future<Map<String, dynamic>> _loadPreferencesRaw(ProfileModel profile) async {
-    final fallback = profile.preferences ?? const UserPreferences();
-    final userId = profile.id;
+  Future<Map<String, dynamic>> _loadUiConfigRaw(UserSettings settings) async {
+    final fallback = settings.uiConfig;
+    final userId = settings.userId;
     try {
       final row = await SupabaseService.client
-          .from('profiles')
-          .select('preferences')
-          .eq('id', userId)
+          .from('user_settings')
+          .select('ui_config')
+          .eq('user_id', userId)
           .maybeSingle();
-      final raw = row?['preferences'];
+      final raw = row?['ui_config'];
       final map = _normalizePrefsMap(raw);
       if (map != null) return map;
     } catch (_) {}
-    return fallback.toJson();
+    return fallback;
   }
 
   Map<String, dynamic>? _normalizePrefsMap(Object? raw) {
@@ -196,6 +197,6 @@ class UserFontRepository {
 }
 
 final userFontRepositoryProvider = Provider<UserFontRepository>((ref) {
-  final repo = ref.watch(profileRepositoryProvider);
+  final repo = ref.watch(userSettingsRepositoryProvider);
   return UserFontRepository(repo);
 });

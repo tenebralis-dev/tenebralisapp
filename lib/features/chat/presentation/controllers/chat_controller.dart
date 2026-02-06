@@ -4,10 +4,11 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/services/llm_service.dart';
 import '../../../../core/services/system_event_handler.dart';
-import '../../../chronicles/data/models/chronicle_model.dart';
-import '../../../chronicles/data/repositories/chronicle_repository.dart';
-import '../../../worlds/data/models/world_model.dart';
+import '../../data/conversation_repository.dart';
+import '../../data/conversation_message_repository.dart';
+import '../../../worlds/application/world_context_controller.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../worlds/data/models/world.dart';
 
 part 'chat_controller.g.dart';
 
@@ -104,13 +105,15 @@ class ChatState {
 class ChatController extends _$ChatController {
   late LLMService _llmService;
   late SystemEventHandler _eventHandler;
-  late ChronicleRepository _chronicleRepository;
+  late ConversationRepository _conversationRepository;
+  late ConversationMessageRepository _messageRepository;
 
   @override
   ChatState build() {
     _llmService = ref.watch(llmServiceProvider);
     _eventHandler = ref.watch(systemEventHandlerProvider);
-    _chronicleRepository = ref.watch(chronicleRepositoryProvider);
+    _conversationRepository = ref.watch(conversationRepositoryProvider);
+    _messageRepository = ref.watch(conversationMessageRepositoryProvider);
 
     return const ChatState();
   }
@@ -119,7 +122,7 @@ class ChatController extends _$ChatController {
   Future<void> initializeChat({
     String? worldId,
     String? npcKey,
-    WorldModel? world,
+    World? world,
   }) async {
     // Build system prompt from world settings
     String systemPrompt = _buildDefaultSystemPrompt();
@@ -146,7 +149,7 @@ ${settings.stylePrompt ?? ''}
     _addSystemMessage('欢迎进入梦境世界。开始你的故事吧。');
 
     // Load chat history if available
-    await _loadChatHistory(worldId);
+    await _loadChatHistory();
   }
 
   /// Build default system prompt
@@ -163,52 +166,60 @@ ${settings.stylePrompt ?? ''}
   }
 
   /// Load chat history
-  Future<void> _loadChatHistory(String? worldId) async {
-    if (worldId == null) return;
-
+  Future<void> _loadChatHistory() async {
     final authState = ref.read(authControllerProvider);
     final userId = authState.user?.id;
     if (userId == null) return;
 
+    final ctx = ref.read(worldContextControllerProvider);
+    final saveId = ctx.saveId;
+    if (saveId == null) return;
+
+    // For MVP, we use a single per-save conversation thread.
+    // npc_id must be a real row; until NPC UI exists, this will be provided by backend seeding.
+    // Here we fallback to a stable placeholder value that must exist.
+    const npcId = '00000000-0000-0000-0000-000000000000';
+    const threadKey = 'main';
+
     try {
-      final chronicles = await _chronicleRepository.getChatHistory(
-        userId,
-        worldId,
-        limit: 20,
+      final conversation = await _conversationRepository.getOrCreate(
+        saveId: saveId,
+        npcId: npcId,
+        threadKey: threadKey,
       );
 
-      final historyMessages = chronicles.reversed.map((chronicle) {
-        final content = chronicle.content;
-        if (content is ChatContent) {
-          return ChatMessageModel(
-            id: chronicle.id,
-            content: content.message,
-            sender: _chronicleSenderToChatSender(content.sender),
-            timestamp: chronicle.createdAt ?? DateTime.now(),
-            npcName: content.npcKey,
-          );
-        }
-        return null;
-      }).whereType<ChatMessageModel>().toList();
+      final conversationId = conversation['id'] as String;
 
-      if (historyMessages.isNotEmpty) {
-        state = state.copyWith(messages: [...historyMessages, ...state.messages]);
+      // Load last 50 messages (descending) then reverse to display.
+      final rows = await _messageRepository.list(
+        conversationId: conversationId,
+        limit: 50,
+      );
+
+      final history = rows.reversed.map((row) {
+        final role = row['role'] as String? ?? 'system';
+        final content = row['content'] as String? ?? '';
+        final createdAtStr = row['created_at'] as String?;
+        final createdAt = createdAtStr == null ? DateTime.now() : DateTime.tryParse(createdAtStr) ?? DateTime.now();
+
+        return ChatMessageModel(
+          id: row['id'] as String,
+          content: content,
+          sender: role == 'user'
+              ? ChatSender.user
+              : role == 'assistant'
+                  ? ChatSender.npc
+                  : ChatSender.system,
+          timestamp: createdAt,
+          npcName: role == 'assistant' ? '向导' : null,
+        );
+      }).toList();
+
+      if (history.isNotEmpty) {
+        state = state.copyWith(messages: history);
       }
-    } catch (e) {
-      // Silently fail - history is optional
-    }
-  }
-
-  ChatSender _chronicleSenderToChatSender(String sender) {
-    switch (sender) {
-      case 'user':
-        return ChatSender.user;
-      case 'npc':
-        return ChatSender.npc;
-      case 'system':
-        return ChatSender.system;
-      default:
-        return ChatSender.system;
+    } catch (_) {
+      // history is optional
     }
   }
 
@@ -248,9 +259,9 @@ ${settings.stylePrompt ?? ''}
       error: null,
     );
 
-    // Save user message to chronicles
-    if (userId != null && state.currentWorldId != null) {
-      _saveMessageToChronicle(userId, userMessage);
+    // Persist user message
+    if (userId != null) {
+      await _persistMessage(role: 'user', content: userMessage.content);
     }
 
     // Get AI response
@@ -327,10 +338,10 @@ ${settings.stylePrompt ?? ''}
         isStreaming: false,
       );
 
-      // Save to chronicle
-      if (userId != null && state.currentWorldId != null) {
+      // Persist assistant message
+      if (userId != null) {
         final finalMessage = finalMessages.firstWhere((m) => m.id == messageId);
-        _saveMessageToChronicle(userId, finalMessage);
+        await _persistMessage(role: 'assistant', content: finalMessage.content);
       }
     } catch (e) {
       state = state.copyWith(
@@ -382,9 +393,16 @@ ${settings.stylePrompt ?? ''}
         );
       }
 
-      // Save to chronicle
-      if (userId != null && state.currentWorldId != null) {
-        _saveMessageToChronicle(userId, npcMessage, response.systemEvents);
+      // Persist assistant message
+      if (userId != null) {
+        await _persistMessage(
+          role: 'assistant',
+          content: npcMessage.content,
+          metadata: {
+            if (response.systemEvents.isNotEmpty)
+              'system_events': response.systemEvents.map((e) => e.toJson()).toList(),
+          },
+        );
       }
     } catch (e) {
       state = state.copyWith(
@@ -394,23 +412,36 @@ ${settings.stylePrompt ?? ''}
     }
   }
 
-  /// Save message to chronicle database
-  Future<void> _saveMessageToChronicle(
-    String userId,
-    ChatMessageModel message, [
-    List<SystemEvent>? events,
-  ]) async {
+  Future<void> _persistMessage({
+    required String role,
+    required String content,
+    Map<String, dynamic>? metadata,
+  }) async {
+    final ctx = ref.read(worldContextControllerProvider);
+    final saveId = ctx.saveId;
+    if (saveId == null) return;
+
+    const npcId = '00000000-0000-0000-0000-000000000000';
+    const threadKey = 'main';
+
     try {
-      await _chronicleRepository.createChatChronicle(
-        userId: userId,
-        worldId: state.currentWorldId!,
-        sender: message.sender == ChatSender.user ? 'user' : 'npc',
-        message: message.content,
-        npcKey: message.npcName,
-        systemEvents: events,
+      final conversation = await _conversationRepository.getOrCreate(
+        saveId: saveId,
+        npcId: npcId,
+        threadKey: threadKey,
       );
-    } catch (e) {
-      // Silently fail - saving is not critical
+      final conversationId = conversation['id'] as String;
+
+      await _messageRepository.insert(
+        conversationId: conversationId,
+        role: role,
+        content: content,
+        metadata: metadata,
+      );
+
+      await _conversationRepository.touchLastMessageAt(conversationId);
+    } catch (_) {
+      // best-effort
     }
   }
 

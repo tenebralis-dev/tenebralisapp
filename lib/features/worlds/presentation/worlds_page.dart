@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 
+import '../application/world_context_controller.dart';
+
 import '../../../core/ui/async_value_widget.dart';
 import '../application/worlds_providers.dart';
 import '../data/models/world.dart';
@@ -93,6 +95,8 @@ class _WorldsPageState extends ConsumerState<WorldsPage> {
   }
 
   void _onWorldTap(World world) {
+    ref.read(worldContextControllerProvider.notifier).setWorld(worldId: world.id);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -412,12 +416,7 @@ class _WorldDetailSheet extends StatelessWidget {
                   child: ElevatedButton(
                     onPressed: () {
                       Navigator.pop(context);
-                      // TODO: Enter world and start chat
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('正在进入 ${world.name}...'),
-                        ),
-                      );
+                      context.push('/os/apps/worlds/${world.id}/identities');
                     },
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),

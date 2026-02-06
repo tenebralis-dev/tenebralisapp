@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/domain/profile_repository.dart';
+import '../../auth/domain/users_repository.dart';
 import 'widgets/widgets.dart';
 
 /// A small HUD panel that shows Host(Profile) + Identity(current_session).
@@ -10,12 +10,12 @@ class HomeHudPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final asyncProfile = ref.watch(currentUserProfileProvider);
+    final asyncProfile = ref.watch(currentHostProfileProvider);
 
     return asyncProfile.when(
       data: (profile) {
-        final points = profile?.globalPoints ?? 0;
-        final identity = profile?.currentSession;
+        final points = profile?.expPoints ?? 0;
+        final identity = profile?.legacyCurrentSession;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
